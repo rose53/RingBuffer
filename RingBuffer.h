@@ -28,24 +28,32 @@ class RingBuffer {
   inline uint16_t getTail()       { return readUint16(bootSectorStart + tailOffset);       }
   inline uint8_t  getFlipMarker() { return fram.read8(bootSectorStart + flipMarkerOffset); }
   
-  inline void setHead(uint16_t head)            {  writeUint16(bootSectorStart + headOffset,head);             }
-  inline void setTail(uint16_t tail)            {  writeUint16(bootSectorStart + tailOffset,tail);             }
-  inline void setFlipMarker(uint8_t flipMarker) {  fram.write8(bootSectorStart + flipMarkerOffset,flipMarker); }
-  
+
   void dump(Stream& stream);
   void dumpBootsector(Stream& stream);
   
+  inline boolean isInitialized()  { return magicBytes == readUint32(bootSectorStart); }
+  
+  boolean isFull();
+  boolean containsData();
+  
  private:
+ 
+  inline void setHead(uint16_t head)            {  writeUint16(bootSectorStart + headOffset,head);             }
+  inline void setTail(uint16_t tail)            {  writeUint16(bootSectorStart + tailOffset,tail);             }
+  inline void setFlipMarker(uint8_t flipMarker) {  fram.write8(bootSectorStart + flipMarkerOffset,flipMarker); }
 
   uint16_t readUint16(uint16_t framAddr);
   void     writeUint16(uint16_t framAddr, uint16_t value);
-  void     writePage(uint16_t framAddr, uint8_t page[], size_t size);
-  void     readPage(uint16_t framAddr, uint8_t page[], size_t size);
+  void     writePage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], size_t size);
+  void     readPage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], size_t size);
+  uint32_t readUint32(uint16_t framAddr);
 	
  private:
  
   static const uint16_t bootSectorStart;
   static const int      bootSectorSize;
+  static const uint32_t magicBytes;
   static const uint8_t  headOffset;
   static const uint8_t  tailOffset;
   static const uint8_t  pageSizeOffset;

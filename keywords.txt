@@ -1,0 +1,30 @@
+#######################################
+# Syntax Coloring Map For RingBuffer
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+RingBuffer	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin 	KEYWORD2
+format 	KEYWORD2
+write 	KEYWORD2
+read 	KEYWORD2
+getPageSize 	KEYWORD2
+getHead 	KEYWORD2
+getTail 	KEYWORD2
+dump 	KEYWORD2
+dumpBootsector	KEYWORD2
+isInitialized	KEYWORD2
+isFull	KEYWORD2
+containsData	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################

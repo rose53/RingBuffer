@@ -19,6 +19,7 @@ union bootSector_t {
 
 const int      RingBuffer::bootSectorSize   = 32;
 const uint16_t RingBuffer::bootSectorStart  = 32 * 1024 - bootSectorSize;
+const uint32_t RingBuffer::magicBytes       = 0xFEEDC0DE;
 const uint8_t  RingBuffer::headOffset       = 4;
 const uint8_t  RingBuffer::tailOffset       = 6;
 const uint8_t  RingBuffer::pageSizeOffset   = 8;
@@ -39,7 +40,7 @@ boolean RingBuffer::begin(uint8_t addr) {
 
 void RingBuffer::format(uint16_t pageSize) {
 	union fourbyte_t fourbyte;
-	fourbyte.dword = 0xFEEDC0DE;
+	fourbyte.dword = magicBytes;
     
 	union twobyte_t twobyte;
     twobyte.word = startData;
@@ -63,77 +64,110 @@ void RingBuffer::format(uint16_t pageSize) {
 	fram.write8(bootSectorStart + flipMarkerOffset, 0x00);
 }
 
-uint16_t RingBuffer::readUint16(uint16_t framAddr) 
-{
+uint32_t RingBuffer::readUint32(uint16_t framAddr) {
+	union fourbyte_t fourbyte;
+	fourbyte.byte[0] = fram.read8(framAddr);
+	fourbyte.byte[1] = fram.read8(framAddr + 1);
+	fourbyte.byte[2] = fram.read8(framAddr + 2);
+	fourbyte.byte[3] = fram.read8(framAddr + 3);
+	return fourbyte.dword;	
+}
+
+uint16_t RingBuffer::readUint16(uint16_t framAddr) {
 	union twobyte_t twobyte;
 	twobyte.byte[0] = fram.read8(framAddr);
 	twobyte.byte[1] = fram.read8(framAddr + 1);
 	return twobyte.word;	
 }
 
-void RingBuffer::writeUint16(uint16_t framAddr, uint16_t value) 
-{
+void RingBuffer::writeUint16(uint16_t framAddr, uint16_t value) {
 	union twobyte_t twobyte;
 	twobyte.word = value;	
 	fram.write8(framAddr, twobyte.byte[0]);
     fram.write8(framAddr + 1, twobyte.byte[1]);
 }
 
-void RingBuffer::writePage(uint16_t framAddr, uint8_t page[], size_t size) {
+/*
+ * Writes the page to the buffer and increments the head pointer
+ */
+void RingBuffer::writePage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], size_t size) {
 	
-	for (int i = 0; i < size; i++) {
+	for (int i = 0; i < min(size,pageSize); i++) {
 		fram.write8(framAddr + i, page[i]);
 	}
+	setHead(framAddr + pageSize);
 }
 
-void RingBuffer::readPage(uint16_t framAddr, uint8_t page[], size_t size) {
+/*
+ * Read the page to the buffer and increments the tail pointer
+ */
+void RingBuffer::readPage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], size_t size) {
 	
-	for (int i = 0; i < size; i++) {
+	for (int i = 0; i < min(size,pageSize); i++) {
 		page[i] = fram.read8(framAddr + i);
 	}
+	setTail(framAddr + pageSize);
 }
 
+boolean RingBuffer::isFull() {
+	uint16_t head = getHead();	
+	uint16_t tail = getTail();
+	uint16_t pageSize = getPageSize();
+	
+	boolean retVal = false;
+	if (getFlipMarker() == 0) {
+		if (head + pageSize > bootSectorStart && startData + pageSize >= tail) {
+			retVal = false;
+		}
+	} else{
+		retVal = head >= tail;
+	}
+	return retVal;
+}
+
+boolean RingBuffer::containsData() {
+	if (getHead() != getTail()) {
+		return true;
+	}
+	// they are equal, we have to check, if we have wrapped 
+	if (getFlipMarker() != 0) {
+		return true;
+	} 
+	return false;
+}
+  
 boolean RingBuffer::write(uint8_t page[], size_t size) {
 	
 	uint16_t head = getHead();	
 	uint16_t tail = getTail();	
 	uint16_t pageSize = getPageSize();
-	uint8_t  flipMarker = getFlipMarker();
 	
+	boolean retVal = false;
 	// check, if we wrapped 
-	if (flipMarker == 0) {
+	if (getFlipMarker() == 0) {
 		if (head + pageSize > bootSectorStart) {
 			// we reached the end of the memory, go to start and flip marker
 			head = startData;
-			flipMarker = 0xFF;
 			setHead(head);
-			setFlipMarker(flipMarker);
+			setFlipMarker(0xFF);
 			if (head + pageSize < tail) {
 				// there is some space, write the page
-				writePage(head,page,min(size,pageSize));
-				setHead(head + pageSize);
-				return true;
-			} else {
-				// we have no space left 
-				return false;
-			}
+				writePage(head,pageSize,page,size);
+				retVal = true;
+			} 
 		} else {
 			// there is some space, write the page
-			writePage(head,page,min(size,pageSize));
-			setHead(head + pageSize);
-			return true;
+			writePage(head,pageSize,page,size);
+			retVal = true;
 		}
 	} else {
 		if (head < tail) {
 			// we have some sapace left
-			writePage(head,page,min(size,pageSize));
-			setHead(head + pageSize);
-			return true;
-		} else {
-			// we have no space left 
-			return false;
-		}
+			writePage(head,pageSize,page,size);
+			retVal = true;
+		} 
 	}	
+	return retVal;
 }
 
 boolean RingBuffer::read(uint8_t page[], size_t size) {
@@ -141,35 +175,28 @@ boolean RingBuffer::read(uint8_t page[], size_t size) {
 	uint16_t head = getHead();	
 	uint16_t tail = getTail();	
 	uint16_t pageSize = getPageSize();
-	uint8_t  flipMarker = getFlipMarker();
 	
-	if (flipMarker == 0) {
+	boolean retVal = false;
+	if (getFlipMarker() == 0) {
 		if (tail < head) {
-			readPage(tail,page,min(size,pageSize));
-			setTail(tail + pageSize);
-			return true;
-		} else {
-			return false;
-		}
+			readPage(tail,pageSize,page,size);
+			retVal = true;
+		} 
 	} else {
 		if (tail + pageSize > bootSectorStart) {
 			tail = startData;
-			flipMarker = 0x00;
 			setTail(tail);
-			setFlipMarker(flipMarker);
+			setFlipMarker(0x00);
 			if (tail < head) {
-				readPage(tail,page,min(size,pageSize));
-				setTail(tail + pageSize);
-				return true;
-			} else {
-				return false;
-			}
+				readPage(tail,pageSize,page,size);
+				retVal = true;
+			} 
 		} else {
-			readPage(tail,page,min(size,pageSize));
-			setTail(tail + pageSize);
-			return true;
+			readPage(tail,pageSize,page,size);
+			retVal = true;
 		}
 	}
+	return retVal;
 }
 
 void RingBuffer::dump(Stream& stream) {

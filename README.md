@@ -1,4 +1,4 @@
-#RingBuffer#
+# RingBuffer
 
 Implementation of a [Ring buffer (Circular buffer)](https://en.wikipedia.org/wiki/Circular_buffer) for the
 [Adafruit I2C FRAM breakout](http://www.adafruit.com/products/1895).

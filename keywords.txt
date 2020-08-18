@@ -23,7 +23,6 @@ dump 	KEYWORD2
 dumpBootsector	KEYWORD2
 isInitialized	KEYWORD2
 isFull	KEYWORD2
-containsData	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)

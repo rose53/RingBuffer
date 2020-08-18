@@ -30,16 +30,14 @@ Returns the address in the memory next used for page writing.
 ### getTail ###
 Returns the address in the memory next used for page reading.
 
-###isInitialized ###
+### isInitialized ###
 Returns _true_, if the ring buffer is initialized (formatted).
 
 ### isFull ###
 Returns _true_, if the ring buffer is full. A call to _write_ will also return _false_.
 
-###containsData	###
+### containsData	###
 Returns _true_, if there is some data in the ring buffer. A call to _resd_ will be successful.
 
 ### dump ###
 Dumps the complete memory.
-
-

@@ -1,6 +1,8 @@
 
 #include "RingBuffer.h"
 
+#define RAM_SIZE 32 * 1024
+
 union twobyte_t {
   uint16_t word;
   uint8_t  byte[2];
@@ -18,12 +20,12 @@ union bootSector_t {
 };
 
 const int      RingBuffer::bootSectorSize   = 32;
-const uint16_t RingBuffer::bootSectorStart  = 32 * 1024 - bootSectorSize;
+const uint16_t RingBuffer::bootSectorStart  = RAM_SIZE - bootSectorSize;
 const uint32_t RingBuffer::magicBytes       = 0xFEEDC0DE;
 const uint8_t  RingBuffer::headOffset       = 4;
 const uint8_t  RingBuffer::tailOffset       = 6;
 const uint8_t  RingBuffer::pageSizeOffset   = 8;
-const uint8_t  RingBuffer::flipMarkerOffset = 10;
+const uint8_t  RingBuffer::emptyMarkerOffset = 10;
 
 const uint8_t  RingBuffer::startData       = 0;
 
@@ -39,6 +41,11 @@ boolean RingBuffer::begin(uint8_t addr) {
 }
 
 void RingBuffer::format(uint16_t pageSize) {
+
+    for (uint16_t i = 0; i < RAM_SIZE; i++) {
+      fram.write8(i,0x00);
+    }
+    
 	union fourbyte_t fourbyte;
 	fourbyte.dword = magicBytes;
     
@@ -61,7 +68,7 @@ void RingBuffer::format(uint16_t pageSize) {
     fram.write8(bootSectorStart + pageSizeOffset + 1, twobyte.byte[1]);
 	
 	// flip marker
-	fram.write8(bootSectorStart + flipMarkerOffset, 0x00);
+	fram.write8(bootSectorStart + emptyMarkerOffset, 0xFF);
 }
 
 uint32_t RingBuffer::readUint32(uint16_t framAddr) {
@@ -92,10 +99,10 @@ void RingBuffer::writeUint16(uint16_t framAddr, uint16_t value) {
  */
 void RingBuffer::writePage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], size_t size) {
 	
-	for (int i = 0; i < min(size,pageSize); i++) {
-		fram.write8(framAddr + i, page[i]);
-	}
-	setHead(framAddr + pageSize);
+  for (int i = 0; i < min(size,pageSize); i++) {
+    fram.write8(framAddr + i, page[i]);
+  }
+  setEmpty(false);
 }
 
 /*
@@ -109,109 +116,56 @@ void RingBuffer::readPage(uint16_t framAddr, uint16_t pageSize, uint8_t page[], 
 	setTail(framAddr + pageSize);
 }
 
-boolean RingBuffer::isFull() {
-	uint16_t head = getHead();	
-	uint16_t tail = getTail();
-	uint16_t pageSize = getPageSize();
-	
-	boolean retVal = false;
-	if (getFlipMarker() == 0) {
-		if (head + pageSize > bootSectorStart && startData + pageSize >= tail) {
-			retVal = false;
-		}
-	} else{
-		retVal = head >= tail;
-	}
-	return retVal;
-}
 
-boolean RingBuffer::containsData() {
-	if (getHead() != getTail()) {
-		return true;
-	}
-	// they are equal, we have to check, if we have wrapped 
-	if (getFlipMarker() != 0) {
-		return true;
-	} 
-	return false;
-}
-  
-boolean RingBuffer::write(uint8_t page[], size_t size) {
+void RingBuffer::write(uint8_t page[], size_t size) {
 	
 	uint16_t head = getHead();	
 	uint16_t tail = getTail();	
 	uint16_t pageSize = getPageSize();
-	
-	boolean retVal = false;
-	// check, if we wrapped 
-	if (getFlipMarker() == 0) {
-		if (head + pageSize > bootSectorStart) {
-			// we reached the end of the memory, go to start and flip marker
-			head = startData;
-			setHead(head);
-			setFlipMarker(0xFF);
-			if (head + pageSize < tail) {
-				// there is some space, write the page
-				writePage(head,pageSize,page,size);
-				retVal = true;
-			} 
-		} else {
-			// there is some space, write the page
-			writePage(head,pageSize,page,size);
-			retVal = true;
-		}
-	} else {
-		if (head < tail) {
-			// we have some sapace left
-			writePage(head,pageSize,page,size);
-			retVal = true;
-		} 
-	}	
-	return retVal;
+    
+    uint16_t nextHead = head + pageSize >= bootSectorStart?startData:head + pageSize;
+
+    if (!isEmpty() && head == tail ) {
+        setTail(nextHead);
+    }
+    writePage(head,pageSize,page,size);
+    
+    setHead(nextHead);
 }
 
 boolean RingBuffer::read(uint8_t page[], size_t size) {
-	
-	uint16_t head = getHead();	
-	uint16_t tail = getTail();	
-	uint16_t pageSize = getPageSize();
-	
-	boolean retVal = false;
-	if (getFlipMarker() == 0) {
-		if (tail < head) {
-			readPage(tail,pageSize,page,size);
-			retVal = true;
-		} 
-	} else {
-		if (tail + pageSize > bootSectorStart) {
-			tail = startData;
-			setTail(tail);
-			setFlipMarker(0x00);
-			if (tail < head) {
-				readPage(tail,pageSize,page,size);
-				retVal = true;
-			} 
-		} else {
-			readPage(tail,pageSize,page,size);
-			retVal = true;
-		}
-	}
-	return retVal;
+
+    if (isEmpty()) {
+        return false;
+    }
+
+    uint16_t head = getHead();    
+    uint16_t tail = getTail();  
+    uint16_t pageSize = getPageSize();
+
+    uint16_t nextTail = tail + pageSize >= bootSectorStart?startData:tail + pageSize;
+
+    readPage(tail,pageSize,page,size);
+
+    setTail(nextTail);
+    if (nextTail == head) {
+        setEmpty(true);
+    }
+    return true;
 }
 
 void RingBuffer::dump(Stream& stream) {
-	uint8_t value;
-	for (uint16_t a = 0; a < 32768; a++) {
-		value = fram.read8(a);
+  uint8_t value;
+  for (uint16_t a = 0; a < RAM_SIZE; a++) {
+    value = fram.read8(a);
     if ((a % 32) == 0) {
-      stream.print("\n 0x"); stream.print(a, HEX); stream.print(": ");
+      stream.println(); printHex16(&a,1,stream); stream.print(": ");
     }
-    stream.print("0x"); 
-    if (value < 0x0F) 
-      stream.print('0');
-    stream.print(value, HEX); stream.print(" ");
+    printHex8(&value,1,stream); 
   }
+  stream.println();
 }
+
 void RingBuffer::dumpBootsector(Stream& stream) {
 	union bootSector_t bootSector;	
 	
@@ -219,15 +173,31 @@ void RingBuffer::dumpBootsector(Stream& stream) {
       bootSector.byte[a - bootSectorStart] = fram.read8(a);
     }
 
-	uint32_t *magic      = bootSector.dword;
-    uint16_t *head       = bootSector.word + 2;
-    uint16_t *tail       = bootSector.word + 3;
-	uint16_t *pageSize   = bootSector.word + 4;
-	uint8_t  *flipMarker = bootSector.byte + 11;
+	uint32_t *magic       = bootSector.dword;
+    uint16_t *head        = bootSector.word + 2;
+    uint16_t *tail        = bootSector.word + 3;
+	uint16_t *pageSize    = bootSector.word + 4;
+	uint8_t  *emptyMarker = bootSector.byte + 10;
 	
-	stream.println(*magic, HEX);
-    stream.println(*head, HEX);
-    stream.println(*tail, HEX);
-	stream.println(*pageSize, HEX);
-	stream.println(*flipMarker, HEX);
+	stream.print("Magic\t\t");    stream.print("0x"); stream.println(*magic, HEX);
+    stream.print("Head\t\t");     printHex16(head,1,stream);       stream.println();
+    stream.print("Tail\t\t");     printHex16(tail,1,stream);       stream.println();
+	stream.print("Pagesize\t");   printHex16(pageSize,1,stream);   stream.println();
+	stream.print("Empty\t\t");    printHex8(emptyMarker,1,stream); stream.println();
+}
+
+void RingBuffer::printHex8(uint8_t *data, uint8_t length, Stream& stream) {
+  char tmp[16];
+  for (int i=0; i<length; i++) {
+    sprintf(tmp, "0x%.2X",data[i]);
+    stream.print(tmp); Serial.print(" ");
+  }
+}
+
+void RingBuffer::printHex16(uint16_t *data, uint8_t length, Stream& stream){
+  char tmp[16];
+  for (int i=0; i<length; i++) {
+    sprintf(tmp, "0x%.4X",data[i]);
+    stream.print(tmp); Serial.print(" ");
+  }
 }

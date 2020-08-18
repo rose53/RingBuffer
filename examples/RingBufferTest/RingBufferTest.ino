@@ -19,39 +19,34 @@ void setup() {
     ringBuffer.format(PAGE_SIZE);
     Serial.println("done.");
   }
-  Serial.print("RingBuffer is full       : ");Serial.println(ringBuffer.isFull(),BIN);
-  Serial.print("RingBuffer contains data : ");Serial.println(ringBuffer.containsData(),BIN);
+  Serial.print("RingBuffer is full  : ");Serial.println(ringBuffer.isFull(),BIN);
+  Serial.print("RingBuffer is empty : ");Serial.println(ringBuffer.isEmpty(),BIN);
 
-  if (ringBuffer.containsData()) {
+  if (!ringBuffer.isEmpty()) {
     while (ringBuffer.read(writePage,sizeof(writePage)));
 
     Serial.print("RingBuffer is full       : ");Serial.println(ringBuffer.isFull(),BIN);
-    Serial.print("RingBuffer contains data : ");Serial.println(ringBuffer.containsData(),BIN);
   }
   for (int i = 0; i < PAGE_SIZE; i++) {
     writePage[i] = i;
   }
   Serial.print("Writing one page to the RingBuffer ...");
-  boolean result = ringBuffer.write(writePage,sizeof(writePage));
+  ringBuffer.write(writePage,sizeof(writePage));
   Serial.println("done.");
 
   Serial.print("RingBuffer is full       : ");Serial.println(ringBuffer.isFull(),BIN);
-  Serial.print("RingBuffer contains data : ");Serial.println(ringBuffer.containsData(),BIN);
 
   Serial.print("Reading one page from the RingBuffer ...");
- 
-  result = ringBuffer.read(writePage,sizeof(writePage));
+
+  ringBuffer.read(writePage,sizeof(writePage));
   Serial.println("done.");
-  Serial.print(" result : ");Serial.println(result);
-  if (result) {
-    for (int i = 0; i < PAGE_SIZE; i++) {
-      Serial.print("0x");
-      if (writePage[i] <= 0x0F) 
-        Serial.print("0");
+  for (int i = 0; i < PAGE_SIZE; i++) {
+    Serial.print("0x");
+    if (writePage[i] <= 0x0F)
+      Serial.print("0");
       Serial.print(writePage[i],HEX);Serial.print(" ");
-    }
-    Serial.println();
   }
+  Serial.println();
 }
 
 void loop() {

@@ -2,6 +2,11 @@
 #include "RingBuffer.h"
 
 #define RAM_SIZE 32 * 1024
+#ifdef ESP8266
+#define min _min
+#define max _max
+#endif
+
 
 union twobyte_t {
   uint16_t word;
